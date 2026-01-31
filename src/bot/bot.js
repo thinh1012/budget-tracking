@@ -1,4 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
+const monitor = require('../../monitor-bridge-batch.js');
 const { parseMessage, formatAmount, detectPartialInput, generateExamples } = require('./messageParser');
 const { createTransaction, getSummary, getCategoryBreakdown, getUserCategories, getUserContributors, getCommonCategories, getUserRecentTransactions, deleteTransaction, searchTransactions } = require('../services/transactionService');
 const { setBudget, getBudgetStatus } = require('../services/budgetService');
@@ -32,6 +33,9 @@ function initBot(token) {
             params: { timeout: 55 }
         }
     });
+
+    // [MONITORING] Track inbound messages for Dashboard
+    bot.on('message', () => monitor.recordInbound());
 
     console.log('🤖 Bot started successfully!');
     console.log('⏱️ Mode: Wake-and-Sleep (Running for 6 minutes, 30s polling)');
