@@ -107,7 +107,7 @@ async function start() {
         if (botToken) {
             initBot(botToken);
 
-            monitor.init('budget_bot');
+            monitor.init('budget_bot', '/root/server-monitor/monitor.db');
         } else {
             console.warn('TELEGRAM_BOT_TOKEN not set. Bot will not start.');
         }
