@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Tracker</title>
+    <meta name="description" content="Personal budget tracking dashboard - track income, expenses, and savings">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">
+                    <span class="logo-icon">💰</span>
+                    Budget Tracker
+                </h1>
+                <div class="header-actions">
+                    <button id="refreshBtn" class="btn btn-ghost" title="Refresh data">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M23 4v6h-6M1 20v-6h6" />
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Date Filter -->
+            <section class="filter-section">
+                <div class="date-filter">
+                    <div class="filter-group">
+                        <label for="startDate">From</label>
+                        <input type="date" id="startDate" class="date-input">
+                    </div>
+                    <div class="filter-group">
+                        <label for="endDate">To</label>
+                        <input type="date" id="endDate" class="date-input">
+                    </div>
+                    <button id="applyFilter" class="btn btn-primary">Apply</button>
+                    <button id="clearFilter" class="btn btn-ghost">Clear</button>
+                </div>
+                <div class="quick-filters">
+                    <button class="quick-filter" data-period="today">Today</button>
+                    <button class="quick-filter" data-period="week">This Week</button>
+                    <button class="quick-filter active" data-period="month">This Month</button>
+                    <button class="quick-filter" data-period="all">All Time</button>
+                </div>
+            </section>
+
+            <!-- Tab Navigation -->
+            <nav class="tabs-nav">
+                <button class="tab-button active" data-tab="overview">
+                    <span>📊</span> Overview
+                </button>
+                <button class="tab-button" data-tab="analytics">
+                    <span>📈</span> Analytics
+                </button>
+                <button class="tab-button" data-tab="contributors">
+                    <span>👥</span> Contributors
+                </button>
+            </nav>
+
+            <!-- Tab Content -->
+            <div class="tabs-content">
+                <!-- Overview Tab -->
+                <div id="overview-tab" class="tab-pane active">
+                    <!-- Summary Cards -->
+                    <section class="summary-section">
+                        <div class="summary-card income">
+                            <div class="card-icon">🟢</div>
+                            <div class="card-content">
+                                <h3>Income</h3>
+                                <p class="amount" id="incomeAmount">0</p>
+                            </div>
+                        </div>
+                        <div class="summary-card expenses">
+                            <div class="card-icon">🔴</div>
+                            <div class="card-content">
+                                <h3>Expenses</h3>
+                                <p class="amount" id="expensesAmount">0</p>
+                            </div>
+                        </div>
+                        <div class="summary-card savings">
+                            <div class="card-icon">📊</div>
+                            <div class="card-content">
+                                <h3>Balance</h3>
+                                <p class="amount" id="savingsAmount">0</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Charts Section -->
+                    <section class="charts-section">
+                        <div class="chart-card">
+                            <h2>Spending by Category</h2>
+                            <div class="chart-container">
+                                <canvas id="categoryChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card">
+                            <h2>Monthly Trends</h2>
+                            <div class="chart-container">
+                                <canvas id="trendsChart"></canvas>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Transactions Table -->
+                    <section class="transactions-section">
+                        <div class="section-header">
+                            <h2>Recent Transactions</h2>
+                            <span class="transaction-count" id="transactionCount">0 transactions</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="transactions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Category</th>
+                                        <th>Description</th>
+                                        <th>Contributor</th>
+                                        <th>User</th>
+                                        <th class="text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactionsBody">
+                                    <!-- Transactions will be inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="load-more">
+                            <button id="loadMoreBtn" class="btn btn-ghost">Load More</button>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Analytics Tab -->
+                <div id="analytics-tab" class="tab-pane">
+                    <section class="analytics-section">
+                        <div class="chart-card full-width">
+                            <h2>Yearly Summary</h2>
+                            <div class="chart-container">
+                                <canvas id="yearlyChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <h3>This Year</h3>
+                                <div id="thisYearStats" class="stat-content">
+                                    <!-- Will be populated by JS -->
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Last Year</h3>
+                                <div id="lastYearStats" class="stat-content">
+                                    <!-- Will be populated by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Contributors Tab -->
+                <div id="contributors-tab" class="tab-pane">
+                    <section class="contributors-section">
+                        <div class="chart-card full-width">
+                            <h2>Income by Contributor</h2>
+                            <div class="chart-container">
+                                <canvas id="contributorChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-card full-width">
+                            <h2>Spending by User</h2>
+                            <div class="chart-container">
+                                <canvas id="userSpendingChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="breakdown-tables">
+                            <div class="breakdown-card">
+                                <h3>💰 Income Contributors</h3>
+                                <div id="contributorBreakdown" class="breakdown-content">
+                                    <!-- Will be populated by JS -->
+                                </div>
+                            </div>
+                            <div class="breakdown-card">
+                                <h3>💸 User Spending</h3>
+                                <div id="userBreakdown" class="breakdown-content">
+                                    <!-- Will be populated by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Send transactions via Telegram:
+                <code>&lt;amount&gt; &lt;category&gt; [description] [(contributor)]</code>
+            </p>
+            <p class="example">Examples: <code>50k eating pho</code> · <code>+2m income salary (duc)</code> ·
+                <code>100k other grab</code>
+            </p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
