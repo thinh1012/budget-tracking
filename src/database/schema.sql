@@ -7,6 +7,25 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Chats table (Telegram chats/groups = households)
+CREATE TABLE IF NOT EXISTS chats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_chat_id INTEGER UNIQUE NOT NULL,
+    title TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dashboard accounts (web login, linked to a chat household)
+CREATE TABLE IF NOT EXISTS dashboard_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    chat_id INTEGER,  -- NULL = admin (sees all chats)
+    is_admin INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (chat_id) REFERENCES chats(id)
+);
+
 -- Categories table (dynamic, user can add more)
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,11 +42,13 @@ CREATE TABLE IF NOT EXISTS transactions (
     description TEXT,
     contributor TEXT,  -- Who contributed (for income tracking)
     user_id INTEGER NOT NULL,
+    chat_id INTEGER,  -- Telegram chat/group (household isolation)
     telegram_message_id INTEGER,
     receipt_file_id TEXT,  -- Telegram file ID for receipts (nice-to-have)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES categories(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (chat_id) REFERENCES chats(id)
 );
 
 -- Insert default categories
@@ -39,17 +60,18 @@ INSERT OR IGNORE INTO categories (name, type) VALUES ('other', 'expense');
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
-
--- Budgets table (monthly limits per category per user)
+-- Budgets table (monthly limits per category per chat)
 CREATE TABLE IF NOT EXISTS budgets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    chat_id INTEGER,
     category_id INTEGER NOT NULL,
     amount INTEGER NOT NULL,
     month TEXT NOT NULL, -- Format: YYYY-MM
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, category_id, month),
     FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (chat_id) REFERENCES chats(id),
     FOREIGN KEY (category_id) REFERENCES categories(id)
 );
 

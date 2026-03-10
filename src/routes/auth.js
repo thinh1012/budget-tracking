@@ -1,38 +1,34 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
+const { getDatabase } = require('../database/database');
+
 const router = express.Router();
 
-/**
- * Login endpoint
- */
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
     const { username, password } = req.body;
-
-    // Simple hardcoded credentials (change these!)
-    const VALID_USERNAME = 'admin';
-    const VALID_PASSWORD = 'budget2026';
-
-    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
+    try {
+        const db = getDatabase();
+        const account = db.prepare('SELECT * FROM dashboard_accounts WHERE username = ?').get(username);
+        if (!account) return res.status(401).json({ error: 'Invalid username or password' });
+        const valid = await bcrypt.compare(password, account.password_hash);
+        if (!valid) return res.status(401).json({ error: 'Invalid username or password' });
         req.session.authenticated = true;
-        req.session.username = username;
+        req.session.username = account.username;
+        req.session.isAdmin = !!account.is_admin;
+        if (!account.is_admin && account.chat_id) {
+            const chat = db.prepare('SELECT telegram_chat_id FROM chats WHERE id = ?').get(account.chat_id);
+            req.session.telegramChatId = chat ? chat.telegram_chat_id : null;
+        } else {
+            req.session.telegramChatId = null;
+        }
         res.json({ success: true });
-    } else {
-        res.status(401).json({ error: 'Invalid username or password' });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
     }
 });
 
-/**
- * Logout endpoint
- */
-router.post('/logout', (req, res) => {
-    req.session.destroy();
-    res.json({ success: true });
-});
-
-/**
- * Check auth status
- */
-router.get('/status', (req, res) => {
-    res.json({ authenticated: !!req.session.authenticated });
-});
+router.post('/logout', (req, res) => { req.session.destroy(); res.json({ success: true }); });
+router.get('/status', (req, res) => { res.json({ authenticated: !!req.session.authenticated, username: req.session.username || null, isAdmin: req.session.isAdmin || false }); });
 
 module.exports = router;

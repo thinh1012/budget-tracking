@@ -26,34 +26,26 @@ function initBot(token) {
         return null;
     }
 
-    bot = new TelegramBot(token, {
-        polling: {
-            interval: 30000,    // 30 seconds
-            autoStart: true,
-            params: { timeout: 55 }
-        }
-    });
+    // Webhook mode: no polling, Express will receive updates from nginx
+    bot = new TelegramBot(token, { webHook: false });
 
     // [MONITORING] Track inbound messages for Dashboard
     bot.on('message', () => monitor.recordInbound());
 
     console.log('🤖 Bot started successfully!');
-    console.log('⏱️ Mode: Wake-and-Sleep (Running for 6 minutes, 30s polling)');
+    console.log('⚡ Mode: Webhook (real-time, zero idle polling)');
 
-    // Schedule shutdown after 6 minutes (360,000 ms)
-    const RUN_DURATION = 360000;
-    setTimeout(() => {
-        console.log('💤 6 minutes up! Shutting down to save router load. See you later.');
-        if (bot) bot.stopPolling();
-        setTimeout(() => process.exit(0), 1000); // Graceful exit
-    }, RUN_DURATION);
+    // Register webhook with Telegram
+    const webhookUrl = `${process.env.WEBHOOK_BASE_URL}/webhook/budget`;
+    bot.setWebHook(webhookUrl).then(() => {
+        console.log(`✅ Webhook registered: ${webhookUrl}`);
+    }).catch((err) => {
+        console.error('❌ Failed to register webhook:', err.message);
+    });
 
-    // Handle polling errors
-    bot.on('polling_error', (error) => {
-        console.error(`⚠️ [NETWORK_ISSUE]: ${error.code} - ${error.message}`);
-        if (error.code === 'EFATAL' || error.code === 'ECONNRESET') {
-            console.error(`💀 NETWORK ERROR (${error.code}). Bot will stay alive and retry until the 6-minute window ends.`);
-        }
+    // Handle webhook errors
+    bot.on('webhook_error', (error) => {
+        console.error(`⚠️ [WEBHOOK_ERROR]: ${error.code} - ${error.message}`);
     });
 
     // Handle overall errors
@@ -284,6 +276,7 @@ async function saveTransaction(msg, parsed, wasInteractive = false) {
             description: parsed.description,
             contributor: parsed.contributor,
             telegramUser: msg.from,
+            telegramChat: msg.chat,
             messageId: msg.message_id,
             receiptFileId: parsed.receiptFileId
         });
