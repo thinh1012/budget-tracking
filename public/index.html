@@ -23,6 +23,20 @@
                     Budget Tracker
                 </h1>
                 <div class="header-actions">
+                    <!-- Export Dropdown -->
+                    <div class="export-dropdown">
+                        <button id="exportBtn" class="btn btn-ghost" title="Export data">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </button>
+                        <div class="export-menu" id="exportMenu">
+                            <a id="exportCsv" class="export-option">📄 Export CSV</a>
+                            <a id="exportXlsx" class="export-option">📊 Export Excel</a>
+                        </div>
+                    </div>
                     <button id="refreshBtn" class="btn btn-ghost" title="Refresh data">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">

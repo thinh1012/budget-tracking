@@ -952,3 +952,37 @@ function init() {
 
 // Start the app
 document.addEventListener('DOMContentLoaded', init);
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+function buildExportUrl(format) {
+    const params = new URLSearchParams({ format });
+    if (currentFilters.startDate) params.set('startDate', currentFilters.startDate);
+    if (currentFilters.endDate) params.set('endDate', currentFilters.endDate);
+    return '/api/export?' + params.toString();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const exportBtn = document.getElementById('exportBtn');
+    const exportMenu = document.getElementById('exportMenu');
+
+    // Toggle dropdown
+    exportBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportMenu.classList.toggle('open');
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', () => exportMenu.classList.remove('open'));
+
+    // CSV download
+    document.getElementById('exportCsv').addEventListener('click', () => {
+        window.location.href = buildExportUrl('csv');
+        exportMenu.classList.remove('open');
+    });
+
+    // Excel download
+    document.getElementById('exportXlsx').addEventListener('click', () => {
+        window.location.href = buildExportUrl('xlsx');
+        exportMenu.classList.remove('open');
+    });
+});

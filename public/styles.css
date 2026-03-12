@@ -890,3 +890,39 @@ body::before {
     color: var(--accent-primary);
     font-weight: 500;
 }
+/* Export dropdown */
+.export-dropdown {
+    position: relative;
+}
+
+.export-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    min-width: 160px;
+    z-index: 100;
+    overflow: hidden;
+}
+
+.export-menu.open {
+    display: block;
+}
+
+.export-option {
+    display: block;
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s;
+}
+
+.export-option:hover {
+    background: var(--bg-hover, rgba(255,255,255,0.05));
+}
