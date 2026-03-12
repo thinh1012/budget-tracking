@@ -475,6 +475,8 @@ function switchTab(tabName) {
         loadAnalytics();
     } else if (tabName === 'contributors') {
         loadContributors();
+    } else if (tabName === 'monthly') {
+        loadMonthlyTab();
     }
 }
 
@@ -986,3 +988,151 @@ document.addEventListener('DOMContentLoaded', () => {
         exportMenu.classList.remove('open');
     });
 });
+
+
+// ─── Theme Toggle ─────────────────────────────────────────────────────────────
+(function initTheme() {
+    const saved = localStorage.getItem('theme') || 'dark';
+    if (saved === 'light') applyTheme('light');
+})();
+
+function applyTheme(mode) {
+    if (mode === 'light') {
+        document.body.classList.add('light-mode');
+        document.getElementById('iconSun').style.display = 'block';
+        document.getElementById('iconMoon').style.display = 'none';
+    } else {
+        document.body.classList.remove('light-mode');
+        document.getElementById('iconSun').style.display = 'none';
+        document.getElementById('iconMoon').style.display = 'block';
+    }
+    localStorage.setItem('theme', mode);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('themeToggle').addEventListener('click', () => {
+        const isLight = document.body.classList.contains('light-mode');
+        applyTheme(isLight ? 'dark' : 'light');
+    });
+});
+
+// ─── Search Bar ───────────────────────────────────────────────────────────────
+let allLoadedTransactions = [];
+
+function applySearch() {
+    const q = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#transactionsBody tr');
+    rows.forEach(row => {
+        if (!q) { row.style.display = ''; return; }
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+    });
+    document.getElementById('searchClear').classList.toggle('visible', !!q);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('searchInput').addEventListener('input', applySearch);
+    document.getElementById('searchClear').addEventListener('click', () => {
+        document.getElementById('searchInput').value = '';
+        applySearch();
+    });
+});
+
+// ─── Monthly Tab ──────────────────────────────────────────────────────────────
+let monthlyChart = null;
+
+async function loadMonthlyTab() {
+    try {
+        // Fetch 36 months of trend data (no date filter — always show all time)
+        const trends = await fetchAPI('/trends', { months: 36 });
+
+        const months = [...new Set(trends.map(t => t.month))].sort();
+
+        const rows = months.map(m => {
+            const inc = (trends.find(t => t.month === m && t.category_type === 'income') || {}).total || 0;
+            const exp = (trends.find(t => t.month === m && t.category_type === 'expense') || {}).total || 0;
+            return { month: m, income: inc, expenses: exp, balance: inc - exp };
+        }).reverse(); // newest first
+
+        // ── Chart ──
+        const chartLabels = [...rows].reverse().map(r => {
+            const [yr, mo] = r.month.split('-');
+            return new Date(yr, mo - 1).toLocaleDateString('vi-VN', { month: 'short', year: '2-digit' });
+        });
+        const chartIncome   = [...rows].reverse().map(r => r.income);
+        const chartExpenses = [...rows].reverse().map(r => r.expenses);
+        const chartBalance  = [...rows].reverse().map(r => r.balance);
+
+        const ctx = document.getElementById('monthlyChart').getContext('2d');
+        if (monthlyChart) monthlyChart.destroy();
+
+        monthlyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [
+                    { label: 'Income',   data: chartIncome,   borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.3, fill: false, pointRadius: 3 },
+                    { label: 'Expenses', data: chartExpenses, borderColor: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)',  tension: 0.3, fill: false, pointRadius: 3 },
+                    { label: 'Balance',  data: chartBalance,  borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.3, fill: true,  pointRadius: 3 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', align: 'end', labels: { color: '#94a3b8', font: { size: 12, family: 'Inter' }, usePointStyle: true, pointStyle: 'circle' } },
+                    tooltip: {
+                        backgroundColor: 'rgba(26,26,36,0.95)', titleColor: '#f8fafc', bodyColor: '#94a3b8',
+                        borderColor: 'rgba(148,163,184,0.1)', borderWidth: 1, padding: 12,
+                        callbacks: { label: ctx => ctx.dataset.label + ': ' + formatAmount(ctx.raw) + ' ₫' }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(148,163,184,0.06)' }, ticks: { color: '#64748b', font: { size: 11 } } },
+                    y: { grid: { color: 'rgba(148,163,184,0.06)' }, ticks: { color: '#64748b', font: { size: 11 }, callback: v => (v >= 1000000 ? (v/1000000).toFixed(1) + 'M' : (v/1000).toFixed(0) + 'k') } }
+                }
+            }
+        });
+
+        // ── Table ──
+        const tbody = document.getElementById('monthlyTableBody');
+        const tfoot = document.getElementById('monthlyTableFoot');
+        tbody.innerHTML = '';
+
+        let totIncome = 0, totExpenses = 0;
+        rows.forEach(r => {
+            totIncome   += r.income;
+            totExpenses += r.expenses;
+            const bal = r.balance;
+            const rate = r.income > 0 ? Math.round((r.income - r.expenses) / r.income * 100) : null;
+            const [yr, mo] = r.month.split('-');
+            const label = new Date(yr, mo - 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+
+            let badgeClass = 'zero', badgeText = 'N/A';
+            if (rate !== null) { badgeClass = rate >= 0 ? 'good' : 'bad'; badgeText = rate + '%'; }
+
+            tbody.insertAdjacentHTML('beforeend',
+                '<tr>' +
+                '<td>' + label + '</td>' +
+                '<td class="text-right" style="color:var(--accent-income)">' + formatAmount(r.income) + ' ₫</td>' +
+                '<td class="text-right" style="color:var(--accent-expense)">' + formatAmount(r.expenses) + ' ₫</td>' +
+                '<td class="text-right ' + (bal >= 0 ? 'positive' : 'negative') + '">' + formatAmount(bal) + ' ₫</td>' +
+                '<td class="text-right"><span class="savings-badge ' + badgeClass + '">' + badgeText + '</span></td>' +
+                '</tr>'
+            );
+        });
+
+        const totBal = totIncome - totExpenses;
+        const totRate = totIncome > 0 ? Math.round(totBal / totIncome * 100) : null;
+        tfoot.innerHTML =
+            '<tr>' +
+            '<td>Total (' + rows.length + ' months)</td>' +
+            '<td class="text-right" style="color:var(--accent-income)">' + formatAmount(totIncome) + ' ₫</td>' +
+            '<td class="text-right" style="color:var(--accent-expense)">' + formatAmount(totExpenses) + ' ₫</td>' +
+            '<td class="text-right ' + (totBal >= 0 ? 'positive' : 'negative') + '">' + formatAmount(totBal) + ' ₫</td>' +
+            '<td class="text-right"><span class="savings-badge ' + (totRate !== null ? (totRate >= 0 ? 'good' : 'bad') : 'zero') + '">' + (totRate !== null ? totRate + '%' : 'N/A') + '</span></td>' +
+            '</tr>';
+
+    } catch (err) {
+        console.error('Error loading monthly tab:', err);
+    }
+}

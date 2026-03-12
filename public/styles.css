@@ -926,3 +926,158 @@ body::before {
 .export-option:hover {
     background: var(--bg-hover, rgba(255,255,255,0.05));
 }
+
+/* ===================================
+   Light Mode
+   =================================== */
+body.light-mode {
+    --bg-primary: #f1f5f9;
+    --bg-secondary: #e2e8f0;
+    --bg-tertiary: #cbd5e1;
+    --bg-card: rgba(255, 255, 255, 0.9);
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --border-color: rgba(15, 23, 42, 0.1);
+    --border-glow: rgba(99, 102, 241, 0.2);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.12);
+}
+
+body.light-mode::before {
+    opacity: 0.03;
+}
+
+body.light-mode .header {
+    background: rgba(255, 255, 255, 0.85);
+    border-bottom: 1px solid var(--border-color);
+}
+
+body.light-mode .btn-ghost {
+    color: var(--text-secondary);
+}
+
+body.light-mode .btn-ghost:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+body.light-mode .date-input,
+body.light-mode .search-input {
+    background: #fff;
+    border-color: #cbd5e1;
+    color: var(--text-primary);
+}
+
+body.light-mode .quick-filter {
+    background: #fff;
+    border-color: #cbd5e1;
+    color: var(--text-secondary);
+}
+
+body.light-mode .quick-filter.active {
+    background: var(--accent-primary);
+    color: #fff;
+    border-color: var(--accent-primary);
+}
+
+body.light-mode .tab-button {
+    color: var(--text-secondary);
+}
+
+body.light-mode .tab-button.active {
+    color: var(--accent-primary);
+}
+
+body.light-mode .export-menu {
+    background: #fff;
+}
+
+body.light-mode .monthly-table tfoot td {
+    background: rgba(0,0,0,0.04);
+}
+
+/* ===================================
+   Search Bar
+   =================================== */
+.search-bar-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.search-input {
+    width: 100%;
+    padding: 9px 36px 9px 36px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+.search-input:focus {
+    border-color: var(--accent-primary);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.search-clear {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 2px 4px;
+    display: none;
+}
+
+.search-clear.visible {
+    display: block;
+}
+
+/* ===================================
+   Monthly Tab
+   =================================== */
+.monthly-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+}
+
+.monthly-table td.positive { color: var(--accent-income); font-weight: 500; }
+.monthly-table td.negative { color: var(--accent-expense); font-weight: 500; }
+.monthly-table td.neutral  { color: var(--text-muted); }
+
+.monthly-table tfoot tr td {
+    font-weight: 600;
+    border-top: 1px solid var(--border-color);
+    background: rgba(255,255,255,0.03);
+    padding-top: var(--spacing-sm);
+}
+
+.savings-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+.savings-badge.good  { background: rgba(16,185,129,0.15); color: var(--accent-income); }
+.savings-badge.bad   { background: rgba(244,63,94,0.15);  color: var(--accent-expense); }
+.savings-badge.zero  { background: rgba(148,163,184,0.1); color: var(--text-muted); }

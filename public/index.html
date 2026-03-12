@@ -37,9 +37,21 @@
                             <a id="exportXlsx" class="export-option">📊 Export Excel</a>
                         </div>
                     </div>
+                    <!-- Theme Toggle -->
+                    <button id="themeToggle" class="btn btn-ghost" title="Toggle light/dark mode">
+                        <svg id="iconSun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                            <circle cx="12" cy="12" r="5"/>
+                            <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                        </svg>
+                        <svg id="iconMoon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                        </svg>
+                    </button>
                     <button id="refreshBtn" class="btn btn-ghost" title="Refresh data">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M23 4v6h-6M1 20v-6h6" />
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                         </svg>
@@ -82,6 +94,9 @@
                 </button>
                 <button class="tab-button" data-tab="contributors">
                     <span>👥</span> Contributors
+                </button>
+                <button class="tab-button" data-tab="monthly">
+                    <span>📅</span> Monthly
                 </button>
             </nav>
 
@@ -136,6 +151,14 @@
                             <h2>Recent Transactions</h2>
                             <span class="transaction-count" id="transactionCount">0 transactions</span>
                         </div>
+                        <!-- Search Bar -->
+                        <div class="search-bar-wrap">
+                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                            <input type="text" id="searchInput" class="search-input" placeholder="Search by description, category, contributor…">
+                            <button id="searchClear" class="search-clear" title="Clear search">✕</button>
+                        </div>
                         <div class="table-container">
                             <table class="transactions-table">
                                 <thead>
@@ -149,7 +172,6 @@
                                     </tr>
                                 </thead>
                                 <tbody id="transactionsBody">
-                                    <!-- Transactions will be inserted here -->
                                 </tbody>
                             </table>
                         </div>
@@ -172,15 +194,11 @@
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <h3>This Year</h3>
-                                <div id="thisYearStats" class="stat-content">
-                                    <!-- Will be populated by JS -->
-                                </div>
+                                <div id="thisYearStats" class="stat-content"></div>
                             </div>
                             <div class="stat-card">
                                 <h3>Last Year</h3>
-                                <div id="lastYearStats" class="stat-content">
-                                    <!-- Will be populated by JS -->
-                                </div>
+                                <div id="lastYearStats" class="stat-content"></div>
                             </div>
                         </div>
                     </section>
@@ -206,15 +224,41 @@
                         <div class="breakdown-tables">
                             <div class="breakdown-card">
                                 <h3>💰 Income Contributors</h3>
-                                <div id="contributorBreakdown" class="breakdown-content">
-                                    <!-- Will be populated by JS -->
-                                </div>
+                                <div id="contributorBreakdown" class="breakdown-content"></div>
                             </div>
                             <div class="breakdown-card">
                                 <h3>💸 User Spending</h3>
-                                <div id="userBreakdown" class="breakdown-content">
-                                    <!-- Will be populated by JS -->
-                                </div>
+                                <div id="userBreakdown" class="breakdown-content"></div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Monthly Tab -->
+                <div id="monthly-tab" class="tab-pane">
+                    <section class="monthly-section">
+                        <div class="chart-card full-width">
+                            <h2>Monthly Overview</h2>
+                            <div class="chart-container">
+                                <canvas id="monthlyChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card full-width">
+                            <h2>Month-by-Month Breakdown</h2>
+                            <div class="table-container">
+                                <table class="transactions-table monthly-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Month</th>
+                                            <th class="text-right">Income</th>
+                                            <th class="text-right">Expenses</th>
+                                            <th class="text-right">Balance</th>
+                                            <th class="text-right">Savings Rate</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="monthlyTableBody"></tbody>
+                                    <tfoot id="monthlyTableFoot"></tfoot>
+                                </table>
                             </div>
                         </div>
                     </section>
