@@ -20,41 +20,80 @@
                 <p>Sign in to view your dashboard</p>
             </div>
 
-            <form id="loginForm" class="login-form">
+            <!-- Tabs -->
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Sign In</button>
+                <button class="auth-tab" data-tab="register">Sign Up</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" class="login-form auth-panel active" data-panel="login">
                 <div class="form-group">
                     <label for="username">Username</label>
                     <input type="text" id="username" name="username" required autocomplete="username">
                 </div>
-
                 <div class="form-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
-
-                <div id="errorMessage" class="error-message"></div>
-
+                <div id="loginError" class="error-message"></div>
                 <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="registerForm" class="login-form auth-panel" data-panel="register">
+                <div class="form-group">
+                    <label for="reg_username">Username</label>
+                    <input type="text" id="reg_username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="reg_password">Password</label>
+                    <input type="password" id="reg_password" name="password" required autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="reg_chat_id">Telegram Chat ID</label>
+                    <input type="text" id="reg_chat_id" name="telegram_chat_id" required placeholder="e.g. -100123456789">
+                    <small style="color:#888;font-size:12px;">Add @userinfobot to your group and send /start to get the ID</small>
+                </div>
+                <div id="registerError" class="error-message"></div>
+                <div id="registerSuccess" class="error-message" style="color:#4caf50;display:none;"></div>
+                <button type="submit" class="btn btn-primary btn-full">Create Account</button>
             </form>
         </div>
     </div>
 
+    <style>
+        .auth-tabs { display: flex; border-bottom: 1px solid #e0e0e0; margin-bottom: 20px; }
+        .auth-tab { flex: 1; padding: 10px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 500; color: #888; border-bottom: 2px solid transparent; transition: all 0.2s; }
+        .auth-tab.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .auth-panel { display: none; }
+        .auth-panel.active { display: block; }
+    </style>
+
     <script>
+        // Tab switching
+        document.querySelectorAll('.auth-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.auth-panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+            });
+        });
+
+        // Login
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            const errorEl = document.getElementById('errorMessage');
-
+            const errorEl = document.getElementById('loginError');
             errorEl.textContent = '';
-
             try {
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-
                 if (response.ok) {
                     window.location.href = '/';
                 } else {
@@ -63,6 +102,35 @@
                 }
             } catch (error) {
                 errorEl.textContent = 'Login failed. Please try again.';
+            }
+        });
+
+        // Register
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('reg_username').value;
+            const password = document.getElementById('reg_password').value;
+            const telegram_chat_id = document.getElementById('reg_chat_id').value;
+            const errorEl = document.getElementById('registerError');
+            const successEl = document.getElementById('registerSuccess');
+            errorEl.textContent = '';
+            successEl.style.display = 'none';
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, telegram_chat_id })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    successEl.textContent = 'Account created! You can now sign in.';
+                    successEl.style.display = 'block';
+                    document.getElementById('registerForm').reset();
+                } else {
+                    errorEl.textContent = data.error || 'Registration failed';
+                }
+            } catch (error) {
+                errorEl.textContent = 'Registration failed. Please try again.';
             }
         });
     </script>
