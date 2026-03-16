@@ -8,7 +8,7 @@ const cors = require('cors');
 const path = require('path');
 
 const { initDatabase } = require('./database/database');
-const { initBot } = require('./bot/bot');
+const { initBot, getBot } = require('./bot/bot');
 const apiRoutes = require('./routes/api');
 const authRoutes = require('./routes/auth');
 const { requireAuth, redirectIfAuthenticated } = require('./middleware/auth');
@@ -34,6 +34,14 @@ app.use(session({
 
 // Auth API routes (must be public for login to work)
 app.use('/api/auth', authRoutes);
+
+// [WEBHOOK] Public route for Telegram to POST updates to (no auth required)
+app.post('/webhook/budget', (req, res) => {
+    const bot = getBot();
+    if (!bot) return res.sendStatus(503); // Telegram will retry when bot is ready
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
 
 // Public static files for login page
 const publicFiles = ['/login.html', '/styles.css'];

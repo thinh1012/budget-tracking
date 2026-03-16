@@ -322,8 +322,11 @@ async function handleCallbackQuery(query) {
     const data = query.data;
     const state = getState(chatId);
 
-    // Answer callback to remove loading state
-    await bot.answerCallbackQuery(query.id);
+    // Answer callback to remove loading state.
+    // For undo_, we answer inside the branch (after the delete) so we can handle expired queries gracefully.
+    if (!data.startsWith('undo_')) {
+        try { await bot.answerCallbackQuery(query.id); } catch (e) { /* ignore if query expired */ }
+    }
 
     // Handle category selection
     if (data.startsWith('cat_')) {
@@ -428,13 +431,30 @@ async function handleCallbackQuery(query) {
         const success = deleteTransaction(transactionId);
 
         if (success) {
-            await bot.editMessageText('⏮️ *Transaction reverted and deleted successfully!*', {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                parse_mode: 'Markdown'
-            });
+            try {
+                await bot.editMessageText('⏮️ *Transaction reverted and deleted successfully!*', {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [] }
+                });
+            } catch (e) {
+                console.error('Error editing undo success message:', e.message);
+            }
+            try { await bot.answerCallbackQuery(query.id, { text: 'Transaction undone.' }); } catch (e) { /* query expired after restart */ }
         } else {
-            await bot.sendMessage(chatId, '❌ Failed to revert transaction. It may have already been deleted or is too old.');
+            // Transaction already deleted (e.g. double-click or post-restart replay)
+            try {
+                await bot.editMessageText('↩️ *Already undone.* (Transaction was already deleted)', {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [] }
+                });
+            } catch (e) {
+                await bot.sendMessage(chatId, '↩️ Already undone.');
+            }
+            try { await bot.answerCallbackQuery(query.id); } catch (e) { /* query expired */ }
         }
     }
 }
