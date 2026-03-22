@@ -1,9 +1,11 @@
+const fs = require("fs");
 const TelegramBot = require('node-telegram-bot-api');
 const monitor = require('../../monitor-bridge-batch.js');
 const { parseMessage, formatAmount, detectPartialInput, generateExamples } = require('./messageParser');
-const { createTransaction, getSummary, getCategoryBreakdown, getUserCategories, getUserContributors, getCommonCategories, getUserRecentTransactions, deleteTransaction, searchTransactions } = require('../services/transactionService');
+const { createTransaction, getSummary, getCategoryBreakdown, getUserCategories, getUserContributors, getCommonCategories, getUserRecentTransactions, deleteTransaction, searchTransactions, suggestCategoryFromHistory, getChatCategories, mergeCategories, findNearDuplicates } = require('../services/transactionService');
 const { setBudget, getBudgetStatus } = require('../services/budgetService');
 const { generateMonthlyReport } = require('../services/reportService');
+const { initAlertTable, setThreshold, removeThreshold, getThreshold, checkAndNotify, initChatBudgetsTable, lookupKeyword } = require('../services/alertService');
 const { processReceipt } = require('../services/ocrService');
 const axios = require('axios'); // I'll need to install this or use fetch if available. 
 // Actually, bot.getFileLink() might be enough if I can get the buffer.
@@ -11,6 +13,10 @@ const https = require('https');
 const { setState, getState, clearState, hasState } = require('./conversationState');
 const { categoryKeyboard, confirmationKeyboard, contributorKeyboard, getCategoryEmoji, successKeyboard } = require('./keyboards');
 const templates = require('./messageTemplates');
+const { getDatabase } = require('../database/database');
+
+// In-memory forecast throttle (resets on restart — acceptable)
+const forecastSentCache = new Set();
 
 let bot = null;
 
@@ -26,6 +32,9 @@ function initBot(token) {
         return null;
     }
 
+    initAlertTable();
+    initChatBudgetsTable();
+
     // Webhook mode: no polling, Express will receive updates from nginx
     bot = new TelegramBot(token, { webHook: false });
 
@@ -37,7 +46,7 @@ function initBot(token) {
 
     // Register webhook with Telegram
     const webhookUrl = `${process.env.WEBHOOK_BASE_URL}/webhook/budget`;
-    bot.setWebHook(webhookUrl).then(() => {
+    bot.setWebHook(webhookUrl, { certificate: fs.createReadStream("/etc/nginx/ssl/na-bot/cert.pem") }).then(() => {
         console.log(`✅ Webhook registered: ${webhookUrl}`);
     }).catch((err) => {
         console.error('❌ Failed to register webhook:', err.message);
@@ -138,6 +147,21 @@ async function handleMessage(msg) {
             await handleParseError(msg, text);
         }
         return;
+    }
+
+    // Smart auto-categorization: keyword table first, then history-based
+    if (!parsed.isIncome) {
+        const keywordMatch = lookupKeyword(chatId, parsed.category);
+        if (keywordMatch && keywordMatch !== parsed.category) {
+            parsed._originalCategory = parsed.category;
+            parsed.category = keywordMatch;
+        } else {
+            const suggestion = suggestCategoryFromHistory(chatId, parsed.category);
+            if (suggestion && suggestion !== parsed.category) {
+                parsed._originalCategory = parsed.category;
+                parsed.category = suggestion;
+            }
+        }
     }
 
     // Check for large transaction (requires confirmation)
@@ -265,8 +289,50 @@ async function handleConversationReply(msg, state) {
 /**
  * Save transaction to database
  */
+async function checkForecast(bot, chatId) {
+    const today = new Date();
+    const dayOfMonth = today.getDate();
+    if (dayOfMonth < 7) return;
+
+    const weekKey = `${chatId}_${today.getFullYear()}_w${Math.floor(dayOfMonth / 7)}`;
+    if (forecastSentCache.has(weekKey)) return;
+
+    const db = getDatabase();
+    const currentMonth = today.toISOString().slice(0, 7);
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 7);
+
+    const cur = db.prepare(`SELECT COALESCE(SUM(t.amount),0) as total FROM transactions t JOIN categories c ON t.category_id=c.id WHERE c.type='expense' AND t.chat_id=(SELECT id FROM chats WHERE telegram_chat_id=?) AND strftime('%Y-%m',t.created_at)=?`).get(chatId, currentMonth);
+    const last = db.prepare(`SELECT COALESCE(SUM(t.amount),0) as total FROM transactions t JOIN categories c ON t.category_id=c.id WHERE c.type='expense' AND t.chat_id=(SELECT id FROM chats WHERE telegram_chat_id=?) AND strftime('%Y-%m',t.created_at)=?`).get(chatId, lastMonth);
+
+    if (!last || last.total === 0) return;
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const projected = Math.round(cur.total / dayOfMonth * daysInMonth);
+    const pct = Math.round((projected / last.total - 1) * 100);
+    if (pct < 30) return;
+
+    forecastSentCache.add(weekKey);
+    await bot.sendMessage(chatId, templates.forecastWarning(projected, last.total, pct, dayOfMonth, daysInMonth), { parse_mode: 'Markdown' });
+}
+
 async function saveTransaction(msg, parsed, wasInteractive = false) {
     const chatId = msg.chat.id;
+
+    // Duplicate check
+    if (!parsed.skipDuplicateCheck && !parsed.isIncome) {
+        const db = getDatabase();
+        const chatRow = db.prepare('SELECT id FROM chats WHERE telegram_chat_id = ?').get(chatId);
+        if (chatRow) {
+            const catRow = db.prepare('SELECT id FROM categories WHERE LOWER(name) = ?').get((parsed.category || '').toLowerCase());
+            if (catRow) {
+                const recent = db.prepare(`SELECT id FROM transactions WHERE amount=? AND category_id=? AND chat_id=? AND created_at >= datetime('now','-5 minutes') LIMIT 1`).get(parsed.amount, catRow.id, chatRow.id);
+                if (recent) {
+                    setState(chatId, { state: 'awaiting_confirmation', isDuplicateCheck: true, transaction: { ...parsed, skipDuplicateCheck: true }, userId: msg.from.id, originalMsg: msg });
+                    await bot.sendMessage(chatId, templates.duplicateWarning(parsed), { parse_mode: 'Markdown', reply_markup: confirmationKeyboard(), reply_to_message_id: msg.message_id });
+                    return;
+                }
+            }
+        }
+    }
 
     try {
         const transaction = createTransaction({
@@ -287,8 +353,14 @@ async function saveTransaction(msg, parsed, wasInteractive = false) {
             return;
         }
 
+        // Build success message — note if auto-categorized
+        let successMsg = templates.transactionSuccess(transaction, wasInteractive);
+        if (parsed._originalCategory) {
+            successMsg += `\n\n🧠 _Auto-categorized from "${parsed._originalCategory}" → "${transaction.category}" based on your history._`;
+        }
+
         // Reply with success
-        await bot.sendMessage(chatId, templates.transactionSuccess(transaction, wasInteractive), {
+        await bot.sendMessage(chatId, successMsg, {
             parse_mode: 'Markdown',
             reply_markup: successKeyboard(transaction.id),
             reply_to_message_id: msg.message_id
@@ -296,15 +368,14 @@ async function saveTransaction(msg, parsed, wasInteractive = false) {
 
         // Check budget status (only for expenses)
         if (transaction.categoryType === 'expense') {
-            const budgetStatus = getBudgetStatus(msg.from.id, transaction.categoryId);
+            const budgetStatus = getBudgetStatus(msg.from.id, transaction.categoryId, null, chatId);
             if (budgetStatus && budgetStatus.percent >= 80) {
-                // Short delay so it appears after the success message
                 setTimeout(async () => {
-                    await bot.sendMessage(chatId, templates.budgetAlert(transaction.category, budgetStatus), {
-                        parse_mode: 'Markdown'
-                    });
+                    await bot.sendMessage(chatId, templates.budgetAlert(transaction.category, budgetStatus), { parse_mode: 'Markdown' });
                 }, 1000);
             }
+            setTimeout(() => checkAndNotify(bot, chatId), 1200);
+            setTimeout(() => checkForecast(bot, chatId), 2500);
         }
     } catch (error) {
         console.error('Error creating transaction:', error);
@@ -486,8 +557,17 @@ async function handleCommand(msg) {
         case '/setbudget':
             await handleSetBudgetCommand(msg);
             break;
+        case '/setlimit':
+            await handleSetLimitCommand(msg);
+            break;
         case '/report':
             await handleReportCommand(msg);
+            break;
+        case '/categories':
+            await handleCategoriesCommand(msg);
+            break;
+        case '/merge':
+            await handleMergeCommand(msg);
             break;
         default:
             // Ignore unknown commands silently
@@ -520,26 +600,31 @@ async function handleSummaryCommand(msg) {
     const chatId = msg.chat.id;
 
     try {
-        // Get this month's summary
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const summary = getSummary({
-            startDate: monthStart.toISOString().split('T')[0]
-        });
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const startDate = monthStart.toISOString().split('T')[0];
+        const endDate = monthEnd.toISOString().split('T')[0];
+        const monthName = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+        const summary = getSummary({ startDate, endDate, chatId });
+        const breakdown = getCategoryBreakdown({ startDate, endDate, chatId });
 
         const savingsEmoji = summary.savings >= 0 ? '✅' : '⚠️';
 
-        const summaryText = `
-📊 *Monthly Summary*
+        const topExpenses = breakdown
+            .filter(c => c.category_type === 'expense')
+            .slice(0, 3)
+            .map(c => `  • ${c.category}: *${formatAmount(c.total)} ₫*`)
+            .join('\n');
 
-💵 Income: *${formatAmount(summary.income)}* ₫
-💸 Expenses: *${formatAmount(summary.expenses)}* ₫
-${savingsEmoji} Remaining Balance: *${formatAmount(summary.savings)}* ₫
+        let text = `📊 *${monthName}*\n\n`;
+        text += `💵 Income: *${formatAmount(summary.income)} ₫*\n`;
+        text += `💸 Spent: *${formatAmount(summary.expenses)} ₫*\n`;
+        text += `${savingsEmoji} Balance: *${formatAmount(summary.savings)} ₫*`;
+        if (topExpenses) text += `\n\n📈 Top expenses:\n${topExpenses}`;
 
-_This month (${monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})_
-        `.trim();
-
-        await bot.sendMessage(chatId, summaryText, {
+        await bot.sendMessage(chatId, text, {
             parse_mode: 'Markdown',
             reply_to_message_id: msg.message_id
         });
@@ -562,7 +647,8 @@ async function handleQuery(msg, categoryQuery) {
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const breakdown = getCategoryBreakdown({
-            startDate: monthStart.toISOString().split('T')[0]
+            startDate: monthStart.toISOString().split('T')[0],
+            chatId
         });
 
         // Find matching category
@@ -658,13 +744,67 @@ async function handleSetBudgetCommand(msg) {
 }
 
 /**
+ * Handle /setlimit command
+ */
+async function handleSetLimitCommand(msg) {
+    const chatId = msg.chat.id;
+    const text = msg.text.trim();
+
+    // /setlimit off — remove limit
+    if (/^\/setlimit\s+off$/i.test(text)) {
+        removeThreshold(chatId);
+        await bot.sendMessage(chatId, '✅ Monthly spending limit removed.', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    // /setlimit — show current
+    if (/^\/setlimit$/.test(text)) {
+        const current = getThreshold(chatId);
+        if (!current) {
+            await bot.sendMessage(chatId,
+                '📊 No spending limit set.\n\nUse `/setlimit <amount>` to set one.\nExample: `/setlimit 10m`',
+                { parse_mode: 'Markdown' });
+        } else {
+            await bot.sendMessage(chatId,
+                `📊 *Current spending limit:* ${formatAmount(current.threshold)} ₫\n\nUse \`/setlimit <amount>\` to change, or \`/setlimit off\` to remove.`,
+                { parse_mode: 'Markdown' });
+        }
+        return;
+    }
+
+    // /setlimit <amount>
+    const match = text.match(/^\/setlimit\s+(\S+)/);
+    if (!match) {
+        await bot.sendMessage(chatId,
+            '❌ *Invalid format!*\n\nUse: `/setlimit <amount>`\nExamples: `/setlimit 10m` · `/setlimit 5000000`\n\nTo remove: `/setlimit off`',
+            { parse_mode: 'Markdown' });
+        return;
+    }
+
+    const parsed = parseMessage(`${match[1]} temp`);
+    if (parsed.error) {
+        await bot.sendMessage(chatId, '❌ Invalid amount. Try `/setlimit 10m` or `/setlimit 5000000`', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    const success = setThreshold(chatId, parsed.amount);
+    if (success) {
+        await bot.sendMessage(chatId,
+            `✅ *Spending limit set to ${formatAmount(parsed.amount)} ₫*\n\nYou'll get a warning when your total monthly expenses cross this amount.\n\nUse \`/setlimit off\` to remove it.`,
+            { parse_mode: 'Markdown' });
+    } else {
+        await bot.sendMessage(chatId, '❌ Could not set limit. Make sure you\'ve logged at least one transaction first.');
+    }
+}
+
+/**
  * Handle natural language smart search
  */
 async function handleSmartSearch(msg, category, count) {
     const chatId = msg.chat.id;
 
     const results = searchTransactions({
-        telegramUserId: msg.from.id,
+        chatId,
         categoryName: category,
         limit: count
     });
@@ -781,6 +921,43 @@ async function handlePhoto(msg) {
             message_id: processMsg.message_id
         });
     }
+}
+
+async function handleCategoriesCommand(msg) {
+    const chatId = msg.chat.id;
+    try {
+        const categories = getChatCategories(chatId);
+        if (!categories.length) {
+            await bot.sendMessage(chatId, '📁 No categories found. Log some transactions first!', { reply_to_message_id: msg.message_id });
+            return;
+        }
+        const names = categories.map(c => c.name);
+        const nearDupes = findNearDuplicates(names);
+        await bot.sendMessage(chatId, templates.categoriesList(categories, nearDupes), { parse_mode: 'Markdown', reply_to_message_id: msg.message_id });
+    } catch (e) {
+        console.error('Error in /categories:', e);
+        await bot.sendMessage(chatId, '❌ Failed to load categories.');
+    }
+}
+
+async function handleMergeCommand(msg) {
+    const chatId = msg.chat.id;
+    const parts = msg.text.trim().split(/\s+/);
+
+    if (parts.length < 3) {
+        await bot.sendMessage(chatId, '❌ Usage: `/merge <from> <to>`\nExample: `/merge eat eating`', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    const [, from, to] = parts;
+    const result = mergeCategories(from, to, chatId);
+
+    if (!result.ok) {
+        await bot.sendMessage(chatId, `❌ ${result.error}`, { reply_to_message_id: msg.message_id });
+        return;
+    }
+
+    await bot.sendMessage(chatId, templates.mergeDone(from, result.toName, result.count), { parse_mode: 'Markdown', reply_to_message_id: msg.message_id });
 }
 
 module.exports = {
