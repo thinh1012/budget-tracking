@@ -209,6 +209,8 @@ function enhancedHelp(userExamples = [], userCategories = []) {
     message += `• \`/summary\` - Monthly summary\n`;
     message += `• \`/setbudget <category> <amount>\` - Set budget\n`;
     message += `• \`/report\` - Visual spending report\n`;
+    message += `• \`/categories\` - List categories + detect duplicates\n`;
+    message += `• \`/merge <from> <to>\` - Merge two categories\n`;
     message += `• \`how much <category>\` - Check spending\n`;
     message += `• \`last 5 <category>\` - Search history\n\n`;
 
@@ -280,6 +282,46 @@ function timeout() {
     return `⏱️ Conversation timed out. Please start over.`;
 }
 
+function duplicateWarning(transaction) {
+    const emoji = transaction.isIncome ? '💰' : '💸';
+    return `⚠️ *Possible Duplicate!*\n\n${emoji} *${formatAmount(transaction.amount)} ₫* — ${transaction.category}${transaction.description ? ' · ' + transaction.description : ''}\n\nA similar transaction was logged just now. Save it anyway?`;
+}
+
+function forecastWarning(projected, lastMonth, pct, dayOfMonth, daysInMonth) {
+    return `📊 *Spending Forecast*\n\nAt your current pace you'll spend *${formatAmount(projected)} ₫* this month — *${pct}% more* than last month's *${formatAmount(lastMonth)} ₫*.\n\n_Day ${dayOfMonth} of ${daysInMonth}._`;
+}
+
+function categoriesList(categories, nearDupes) {
+    const expense = categories.filter(c => c.type === 'expense');
+    const income = categories.filter(c => c.type === 'income');
+
+    let msg = `📁 *Your Categories*\n\n`;
+
+    if (expense.length) {
+        msg += `💸 *Expenses this month:*\n`;
+        expense.forEach(c => {
+            msg += `  • ${getCategoryEmoji(c.name)} ${c.name}${c.this_month > 0 ? ` — ${formatAmount(c.this_month)} ₫` : ' — no activity'}\n`;
+        });
+    }
+    if (income.length) {
+        msg += `\n💰 *Income:*\n`;
+        income.forEach(c => {
+            msg += `  • ${c.name}${c.this_month > 0 ? ` — ${formatAmount(c.this_month)} ₫` : ''}\n`;
+        });
+    }
+    if (nearDupes.length) {
+        msg += `\n⚠️ *Possible duplicates detected:*\n`;
+        nearDupes.forEach(([a, b]) => msg += `  • \`${a}\` ↔ \`${b}\` — use \`/merge ${a} ${b}\` to combine\n`);
+    }
+
+    msg += `\n_Use_ \`/merge <from> <to>\` _to merge categories._`;
+    return msg;
+}
+
+function mergeDone(from, to, count) {
+    return `✅ *Merged!*\n\n\`${from}\` → \`${to}\`\n${count} transaction${count !== 1 ? 's' : ''} updated.`;
+}
+
 module.exports = {
     missingAmountError,
     invalidFormatError,
@@ -294,5 +336,9 @@ module.exports = {
     budgetLimitSet,
     searchResult,
     canceled,
-    timeout
+    timeout,
+    duplicateWarning,
+    forecastWarning,
+    categoriesList,
+    mergeDone
 };

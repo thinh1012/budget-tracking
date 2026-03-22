@@ -35,10 +35,26 @@
                 <div class="form-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
+                    <a id="forgotLink" href="#" style="display:inline-block;margin-top:6px;font-size:12px;color:#888;text-decoration:none" onmouseover="this.style.color='#aaa'" onmouseout="this.style.color='#888'">Forgot password?</a>
                 </div>
                 <div id="loginError" class="error-message"></div>
                 <button type="submit" class="btn btn-primary btn-full">Sign In</button>
             </form>
+
+            <!-- Forgot Password inline panel -->
+            <div id="forgotPanel" style="display:none;margin-top:12px">
+                <p style="font-size:13px;color:#888;margin-bottom:12px">Enter your username and a temporary password will be sent to your Telegram group.</p>
+                <div class="form-group">
+                    <label for="forgot_username">Username</label>
+                    <input type="text" id="forgot_username" autocomplete="username">
+                </div>
+                <div id="forgotError" class="error-message"></div>
+                <div id="forgotSuccess" class="error-message" style="color:#4caf50;display:none"></div>
+                <div style="display:flex;gap:8px">
+                    <button id="forgotSubmitBtn" class="btn btn-primary btn-full">Send Temporary Password</button>
+                    <button id="forgotBackBtn" class="btn btn-ghost" style="white-space:nowrap">Back</button>
+                </div>
+            </div>
 
             <!-- Register Form -->
             <form id="registerForm" class="login-form auth-panel" data-panel="register">
@@ -102,6 +118,47 @@
                 }
             } catch (error) {
                 errorEl.textContent = 'Login failed. Please try again.';
+            }
+        });
+
+        // Forgot password link toggle
+        document.getElementById('forgotLink').addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('forgotPanel').style.display = 'block';
+            document.getElementById('forgot_username').value = document.getElementById('username').value;
+            document.getElementById('forgotError').textContent = '';
+            document.getElementById('forgotSuccess').style.display = 'none';
+        });
+        document.getElementById('forgotBackBtn').addEventListener('click', () => {
+            document.getElementById('forgotPanel').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+        });
+
+        // Forgot password submit
+        document.getElementById('forgotSubmitBtn').addEventListener('click', async () => {
+            const username = document.getElementById('forgot_username').value.trim();
+            const errorEl = document.getElementById('forgotError');
+            const successEl = document.getElementById('forgotSuccess');
+            errorEl.textContent = '';
+            successEl.style.display = 'none';
+            if (!username) { errorEl.textContent = 'Please enter your username.'; return; }
+            try {
+                const res = await fetch('/api/auth/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                if (res.ok) {
+                    successEl.textContent = 'If that username exists, a temporary password has been sent to your Telegram group.';
+                    successEl.style.display = 'block';
+                    document.getElementById('forgot_username').value = '';
+                } else {
+                    const data = await res.json();
+                    errorEl.textContent = data.error || 'Failed. Please try again.';
+                }
+            } catch (e) {
+                errorEl.textContent = 'Request failed. Please try again.';
             }
         });
 

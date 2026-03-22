@@ -9,6 +9,8 @@ const path = require('path');
 
 const { initDatabase } = require('./database/database');
 const { initBot, getBot } = require('./bot/bot');
+const { scheduleMonthlyReport, initSpikeTable, scheduleSpikeChecks } = require('./services/schedulerService');
+const { initChatBudgetsTable, initKeywordsTable } = require('./services/alertService');
 const apiRoutes = require('./routes/api');
 const authRoutes = require('./routes/auth');
 const { requireAuth, redirectIfAuthenticated } = require('./middleware/auth');
@@ -114,6 +116,11 @@ async function start() {
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
         if (botToken) {
             initBot(botToken);
+            initSpikeTable();
+            initChatBudgetsTable();
+            initKeywordsTable();
+            scheduleMonthlyReport(getBot());
+            scheduleSpikeChecks(getBot());
 
             monitor.init('budget_bot', '/root/server-monitor/monitor.db');
         } else {

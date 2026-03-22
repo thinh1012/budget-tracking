@@ -121,17 +121,87 @@ function getCommonCategories(tid, limit) { if (!limit) limit = 5; return getData
 function getUserRecentTransactions(tid, limit) { if (!limit) limit = 3; return getDatabase().prepare('SELECT t.amount, t.description, c.name as category, c.type as category_type, t.contributor FROM transactions t JOIN categories c ON t.category_id = c.id JOIN users u ON t.user_id = u.id WHERE u.telegram_id = ? ORDER BY t.created_at DESC LIMIT ?').all(tid, limit); }
 function deleteTransaction(id) { const result = getDatabase().prepare('DELETE FROM transactions WHERE id = ?').run(id); return result.changes > 0; }
 
-function searchTransactions({ telegramUserId, categoryName, limit, days } = {}) {
+function updateTransaction(id, { amount, categoryName, categoryType, description, contributor, date }) {
+    const db = getDatabase();
+    const category = getOrCreateCategory(categoryName, categoryType || 'expense');
+    const result = db.prepare(
+        'UPDATE transactions SET amount=?, category_id=?, description=?, contributor=?, created_at=? WHERE id=?'
+    ).run(amount, category.id, description || null, contributor || null, date, id);
+    return result.changes > 0;
+}
+
+function searchTransactions({ telegramUserId, categoryName, limit, days, chatId } = {}) {
     const db = getDatabase();
     if (!limit) limit = 5;
-    const user = getOrCreateUser({ id: telegramUserId });
-    let q = 'SELECT t.amount, t.description, t.contributor, t.created_at, c.name as category, c.type as category_type FROM transactions t JOIN categories c ON t.category_id = c.id WHERE t.user_id = ?';
-    const p = [user.id];
+    let q = 'SELECT t.amount, t.description, t.contributor, t.created_at, c.name as category, c.type as category_type FROM transactions t JOIN categories c ON t.category_id = c.id WHERE 1=1';
+    const p = [];
+    if (telegramUserId) {
+        const user = getOrCreateUser({ id: telegramUserId });
+        q += ' AND t.user_id = ?'; p.push(user.id);
+    }
+    if (chatId) { q += ' AND t.chat_id = (SELECT id FROM chats WHERE telegram_chat_id = ?)'; p.push(chatId); }
     if (categoryName) { q += ' AND c.name = ?'; p.push(categoryName.toLowerCase().trim()); }
-    if (days) { q += "AND t.created_at >= date('now', ?)"; p.push('-' + days + ' days'); }
+    if (days) { q += " AND t.created_at >= date('now', ?)"; p.push('-' + days + ' days'); }
     q += ' ORDER BY t.created_at DESC LIMIT ?';
     p.push(limit);
     return db.prepare(q).all(...p);
 }
 
-module.exports = { getOrCreateUser, getOrCreateChat, getOrCreateCategory, createTransaction, getTransactions, getSummary, getCategoryBreakdown, getMonthlyTrends, getCategories, getYearlySummary, getContributorBreakdown, getUserSpending, getUserCategories, getUserContributors, getCommonCategories, getUserRecentTransactions, deleteTransaction, searchTransactions };
+// ─── Smart categorization ─────────────────────────────────────────────────────
+function suggestCategoryFromHistory(telegramChatId, keyword) {
+    if (!keyword || keyword.length < 2) return null;
+    const db = getDatabase();
+    const kw = keyword.toLowerCase();
+    // If this keyword is already a well-established category in this chat, don't override
+    const asCategory = db.prepare(`SELECT COUNT(*) as c FROM transactions t JOIN categories c ON t.category_id = c.id WHERE t.chat_id = (SELECT id FROM chats WHERE telegram_chat_id = ?) AND LOWER(c.name) = ?`).get(telegramChatId, kw);
+    if (asCategory && asCategory.c >= 5) return null;
+    // Check if keyword appears as description under a different, more common category
+    const suggestion = db.prepare(`SELECT c.name, COUNT(*) as freq FROM transactions t JOIN categories c ON t.category_id = c.id WHERE t.chat_id = (SELECT id FROM chats WHERE telegram_chat_id = ?) AND c.type = 'expense' AND LOWER(c.name) != ? AND (LOWER(t.description) LIKE ? OR LOWER(t.description) = ?) GROUP BY c.id ORDER BY freq DESC LIMIT 1`).get(telegramChatId, kw, `%${kw}%`, kw);
+    return (suggestion && suggestion.freq >= 2) ? suggestion.name : null;
+}
+
+// ─── Category management ──────────────────────────────────────────────────────
+function getChatCategories(telegramChatId, month) {
+    if (!month) month = new Date().toISOString().slice(0, 7);
+    const db = getDatabase();
+    return db.prepare(`SELECT c.name, c.type, COALESCE(SUM(CASE WHEN strftime('%Y-%m', t.created_at) = ? THEN t.amount ELSE 0 END), 0) as this_month, COUNT(DISTINCT t.id) as total_tx FROM categories c JOIN transactions t ON t.category_id = c.id AND t.chat_id = (SELECT id FROM chats WHERE telegram_chat_id = ?) GROUP BY c.id ORDER BY this_month DESC, total_tx DESC`).all(month, telegramChatId);
+}
+
+function mergeCategories(fromName, toName, telegramChatId) {
+    const db = getDatabase();
+    const fromCat = db.prepare('SELECT id FROM categories WHERE LOWER(name) = ?').get(fromName.toLowerCase());
+    const toCat = db.prepare('SELECT id, name FROM categories WHERE LOWER(name) = ?').get(toName.toLowerCase());
+    if (!fromCat) return { ok: false, error: `Category "${fromName}" not found` };
+    if (!toCat) return { ok: false, error: `Category "${toName}" not found` };
+    if (fromCat.id === toCat.id) return { ok: false, error: 'Same category' };
+    const chatRow = telegramChatId ? db.prepare('SELECT id FROM chats WHERE telegram_chat_id = ?').get(telegramChatId) : null;
+    let q = 'UPDATE transactions SET category_id = ? WHERE category_id = ?';
+    const p = [toCat.id, fromCat.id];
+    if (chatRow) { q += ' AND chat_id = ?'; p.push(chatRow.id); }
+    const result = db.prepare(q).run(...p);
+    const remaining = db.prepare('SELECT COUNT(*) as c FROM transactions WHERE category_id = ?').get(fromCat.id);
+    if (remaining.c === 0) db.prepare('DELETE FROM categories WHERE id = ?').run(fromCat.id);
+    return { ok: true, count: result.changes, toName: toCat.name };
+}
+
+function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n; if (n === 0) return m;
+    const dp = Array.from({ length: m + 1 }, (_, i) => Array.from({ length: n + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0));
+    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+    return dp[m][n];
+}
+
+function findNearDuplicates(categoryNames) {
+    const pairs = [];
+    for (let i = 0; i < categoryNames.length; i++) {
+        for (let j = i + 1; j < categoryNames.length; j++) {
+            const a = categoryNames[i], b = categoryNames[j];
+            if (Math.min(a.length, b.length) < 3) continue;
+            if (a.includes(b) || b.includes(a) || (levenshtein(a, b) <= 2 && Math.min(a.length, b.length) >= 4)) pairs.push([a, b]);
+        }
+    }
+    return pairs;
+}
+
+module.exports = { getOrCreateUser, getOrCreateChat, getOrCreateCategory, createTransaction, getTransactions, getSummary, getCategoryBreakdown, getMonthlyTrends, getCategories, getYearlySummary, getContributorBreakdown, getUserSpending, getUserCategories, getUserContributors, getCommonCategories, getUserRecentTransactions, deleteTransaction, updateTransaction, searchTransactions, suggestCategoryFromHistory, getChatCategories, mergeCategories, findNearDuplicates };
