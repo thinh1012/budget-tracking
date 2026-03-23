@@ -2,3 +2,11 @@ node_modules/
 .env
 data/*.db
 *.log
+
+# Internal docs & debug scripts
+_docs.md
+check_db.js
+repro.js
+test_parser.js
+monitor-bridge-batch.js
+monitor-bridge-batch.mjs
