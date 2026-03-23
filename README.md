@@ -1,53 +1,53 @@
-# Budget Tracking Bot
+# Budget Tracking
 
-Personal budget tracking with Telegram input and a web dashboard.
+Personal expense tracker with a Telegram bot for input and a web dashboard for review.
 
-## Access
+## What it does
 
-| | URL |
-|---|---|
-| **Dashboard (LAN)** | http://192.168.1.131:3110/ |
-| **Public / Webhook** | https://thinhle1234.ddns.net |
-
-> The app runs on an Ubuntu server on the local network. The DDNS domain is used for Telegram webhook only.
-
-## Login
-
-Default credentials (from `.env`):
-- **Username:** `admin`
-- **Password:** `budget2026`
-
-> Accounts are managed via `manage-accounts.js` and stored in the database (not the `.env`).
-
-## Account Management
-
-```bash
-# Add a new admin account
-node manage-accounts.js add-admin <username> <password>
-```
-
-## Running the App
-
-```bash
-# Production
-npm start
-
-# Development (auto-reload)
-npm run dev
-```
+- Send expenses to a Telegram bot in natural language — it parses the amount, category, and note automatically
+- Web dashboard shows spending by category, monthly totals, and transaction history
+- Multi-account support with per-account balance tracking
+- Runs 24/7 on a self-hosted Ubuntu server (PM2 + webhook mode)
 
 ## Stack
 
-- **Bot:** Telegram via `node-telegram-bot-api`
-- **Server:** Express.js on port `3110`
-- **Database:** SQLite via `better-sqlite3`
+- **Backend:** Node.js, Express
+- **Bot:** Telegram Bot API (webhook)
+- **Database:** SQLite (better-sqlite3)
+- **Frontend:** Vanilla HTML/CSS/JS
 - **Auth:** bcrypt sessions
-- **Reverse proxy:** nginx (see `nginx.conf`)
-- **OCR:** tesseract.js (receipt scanning)
+- **Reverse proxy:** nginx
 
-## Environment
+## Architecture
 
-Copy `.env.example` to `.env` and fill in:
-- `TELEGRAM_BOT_TOKEN`
-- `SESSION_SECRET`
-- `WEBHOOK_BASE_URL`
+```
+Telegram → webhook → Express (port 3110) → SQLite
+                                          ↓
+                               Web dashboard (login required)
+```
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env   # fill in your values
+npm start
+```
+
+## Environment variables
+
+| Variable | Description |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `WEBHOOK_BASE_URL` | Public HTTPS URL for Telegram webhook |
+| `SESSION_SECRET` | Express session secret |
+
+## Account management
+
+```bash
+node manage-accounts.js add-admin <username> <password>
+```
+
+## Self-hosting notes
+
+Deployed behind nginx with a self-signed cert on port 8443 for Telegram webhook compatibility. PM2 keeps it alive across reboots.
