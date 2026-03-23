@@ -21,9 +21,9 @@ Personal expense tracker with a Telegram bot for input and a web dashboard for r
 ## Architecture
 
 ```
-Telegram → webhook → Express (port 3110) → SQLite
-                                          ↓
-                               Web dashboard (login required)
+Telegram → webhook → Express → SQLite
+                             ↓
+                    Web dashboard (login required)
 ```
 
 ## Setup
